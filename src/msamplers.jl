@@ -10,12 +10,8 @@ export rwmc_step!, run_rwmc_sampling, mala_step!, run_mala_sampling, set_positio
 # Setter functions for AtomsBase.Atoms
 import AtomsBase: set_position!, set_velocity!
 
-function AtomsBase.set_position!(sys::Atoms, i::Integer, x::SVector)
+function AtomsBase.set_position!(sys::Atoms, i::Integer, x)
     sys.atom_data.position[i] = x
-end
-
-function AtomsBase.set_position!(sys::Atoms, i::Integer, x::Vector)
-    sys.atom_data.position[i] = copy(x)
 end
 
 function AtomsBase.set_position!(sys::Atoms, positions)
@@ -24,11 +20,8 @@ function AtomsBase.set_position!(sys::Atoms, positions)
     end
 end
 
-function AtomsBase.set_velocity!(sys::Atoms, i::Integer, vel::SVector)
+function AtomsBase.set_velocity!(sys::Atoms, i::Integer, vel)
     sys.atom_data.velocity[i] = vel
-end
-function AtomsBase.set_velocity!(sys::Atoms, i::Integer, vel::Vector)
-    sys.atom_data.velocity[i] = copy(vel)
 end
 
 function AtomsBase.set_velocity!(sys::Atoms, velocities)
