@@ -1,0 +1,7 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "julia": true,
+        "timeout": true
+    },
+    "julia.additionalArgs": ["-p", "8"]
+}
