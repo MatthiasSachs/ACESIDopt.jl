@@ -364,3 +364,43 @@ end
 # position(system,:)
 # velocity(system,:)
 # velocity(fsystem,:)
+
+#=============================================================================
+PARAMETER I/O FUNCTIONS
+=============================================================================#
+
+using YAML
+
+"""
+    save_simulation_parameters(filepath::String, params::Dict)
+
+Save simulation parameters to a YAML file.
+
+Arguments:
+- `filepath`: Path to the output YAML file
+- `params`: Dictionary containing all simulation parameters
+"""
+function save_simulation_parameters(filepath::String, params::Dict)
+    YAML.write_file(filepath, params)
+    println("Saved simulation parameters to: $filepath")
+end
+
+"""
+    load_simulation_parameters(filepath::String) -> Dict
+
+Load simulation parameters from a YAML file.
+
+Arguments:
+- `filepath`: Path to the YAML file containing parameters
+
+Returns:
+- Dictionary containing all simulation parameters
+"""
+function load_simulation_parameters(filepath::String)
+    if !isfile(filepath)
+        error("Parameter file not found: $filepath")
+    end
+    params = YAML.load_file(filepath)
+    println("Loaded simulation parameters from: $filepath")
+    return params
+end
