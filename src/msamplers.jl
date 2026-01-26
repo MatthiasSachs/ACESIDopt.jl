@@ -7,6 +7,8 @@ using Unitful: ustrip, @u_str
 using StaticArrays
 using StaticArrays: SVector, SMatrix
 using Distributed, ProgressMeter
+using AtomsCalculators
+using ACESIDopt: predictive_variance
 export rwmc_step!, run_rwmc_sampling, mala_step!, run_mala_sampling, hmc_step!, set_position!, set_velocity!
 export RWMCSampler, MALASampler, HMCSampler, run_sampler, step!, tune_sampler
 export run_parallel_tempering, run_parallel_tempering_distributed
@@ -1291,7 +1293,7 @@ end
 
 
 """
-    run_HAL_sampler(sampler, initial_system, model, T, Σ; τ=1.0, σ_stop=.1, n_samples::Int=1000, burnin::Int=1000, thin::Int=10, collect_forces::Bool=false)
+    run_HAL_sampler(sampler, initial_system, model, T, Σ, Psqrt; τ=1.0, σ_stop=.1, n_samples::Int=1000, burnin::Int=1000, thin::Int=10, collect_forces::Bool=false)
 
 Run MCMC sampling using the specified sampler configuration.
 
@@ -1304,12 +1306,13 @@ The dispatch to specific algorithms happens at the step! level.
 - `model`: potential model (e.g., ACE potential or HarmonicCalculator)
 - `T`: temperature (K)
 - `Σ`: covariance matrix of the posterior distribution
+- `Psqrt`: square root of the diagonal preconditioner matrix 
 - `τ`: non-negative scaling parameter for the biasing strength of the HAL potential
 - `σ_stop`: threshold for predictive standard deviation. Sampling terminates once this threshold has been reached.
 - `n_samples`: number of samples to collect (after burnin and thinning)
 - `burnin`: number of initial steps to discard
 - `thin`: keep every thin-th sample
-- `collect_forces`: whether to collect forces in trajectory (only applies to MALA)
+- `collect_forces`: whether to collect forces in trajectory 
 
 # Returns
 - `(samples, acceptance_rate, traj, system_max, std_max)`: collected samples, acceptance rate, trajectory data
@@ -1318,16 +1321,14 @@ The dispatch to specific algorithms happens at the step! level.
 ```julia
 # RWMC sampling
 rwmc = RWMCSampler(step_size=0.1)
-samples, acc_rate, traj, system_max, std_max = run_HAL_sampler(rwmc, system, model, 300.0, Σ, τ; n_samples=5000, burnin=2000, thin=5, collect_forces=true)
+samples, acc_rate, traj, system_max, std_max = run_HAL_sampler(rwmc, system, model, 300.0, Σ, Psqrt; τ=1.0, σ_stop=0.1, n_samples=5000, burnin=2000, thin=5, collect_forces=false)
 
 # MALA sampling currently not supported with HAL potential
-mala = MALASampler(step_size=0.1)
-samples, acc_rate, traj, system_max, std_max = run_HAL_sampler(mala, system, model, 300.0, Σ, τ; n_samples=5000, burnin=2000, thin=5, collect_forces=true)
 ```
 """
-function run_HAL_sampler(sampler, initial_system, model, T, Σ; τ=1.0, σ_stop=.1, n_samples::Int=1000, burnin::Int=1000, thin::Int=10, collect_forces::Bool=false)
+function run_HAL_sampler(sampler, initial_system, model, T, Σ, Psqrt; τ=1.0, σ_stop=.1, n_samples::Int=1000, burnin::Int=1000, thin::Int=10, collect_forces::Bool=false)
     system_max = deepcopy(initial_system)
-    std_max = sqrt(predictive_variance(model, system_max, Σ; Psqrt))
+    std_max = sqrt(predictive_variance(model, system_max, Σ; Psqrt=Psqrt))
     
     samples = []
     if collect_forces
@@ -1351,7 +1352,7 @@ function run_HAL_sampler(sampler, initial_system, model, T, Σ; τ=1.0, σ_stop=
         println("Force collection: enabled")
     end
     @assert sampler isa RWMCSampler "HAL potential currently only supported with RWMCSampler"
-    halmodel = HALModel(model, Σ, sqrtm(Σ), τ)
+    halmodel = HALModel(model, Σ, Psqrt, τ)
     @showprogress for step_num in 1:n_total
         accepted, ΔU, U_current, f_current = step!(current_system, sampler, halmodel, T)
         

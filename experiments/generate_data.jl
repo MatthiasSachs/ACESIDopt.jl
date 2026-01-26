@@ -15,18 +15,18 @@ const SIMULATION_SEED = 420
 const N_WORKERS = 4
 
 # Input/Output paths
-const SIMULATION_NAME = "ptd_ACE_silicon_dia-primitive-2-large-c"
+const SIMULATION_NAME = "ptd_ACE_silicon_dia-primitive-2-large-high-temp"
 const INPUT_DATA_PATH = joinpath(@__DIR__, "..", "data", "Si-diamond-primitive-2atom-large.xyz")
 const OUTPUT_DIR = joinpath(@__DIR__, "results")
 
 # Model specification
-const MODEL = "../models/Si_ref_model.json"
+const MODEL ="SW"  # "../models/Si_ref_model.json"
 #"SW"  # Use "SW" for Stillinger-Weber or provide path to ACE model file (e.g., "../models/Si_ref_model.json")
 
 # Parallel tempering parameters
 const N_REPLICAS = 4
-const T_MIN = 300.0  # K
-const T_MAX = 900.0  # K
+const T_MIN = 500.0  # K
+const T_MAX = 1200.0  # K
 
 # MCMC sampling parameters
 const N_SAMPLES = 10000 #10000

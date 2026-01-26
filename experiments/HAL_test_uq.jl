@@ -391,18 +391,7 @@ end
 # fieldnames(typeof(model.model.Vref.E0))
 
 
-function predictive_variance(x::Vector, covar::Matrix; var_e=0.0)
-    return dot(x, covar * x) + var_e
-end
-function predictive_variance(x::Vector, covar::Matrix, Psqrt;  var_e=0.0)
-    xt = Psqrt \ x
-    return predictive_variance(xt, covar; var_e=var_e)
-end
-function predictive_variance(model, atom::AtomsBase.AbstractSystem, covar::Matrix; Psqrt=I, var_e=0.0)
-    # Check wheter this should be indeed the sum or variance
-    x = sum(site_descriptors(atom, model))
-    return predictive_variance(x, covar, Psqrt; var_e=var_e)
-end
+
 
 
 model_ref_energies = []

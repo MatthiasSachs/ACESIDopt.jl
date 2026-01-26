@@ -15,7 +15,7 @@ const RANDOM_SEED = 2234
 const N_WORKERS = 4
 
 # Experiment identification
-const EXPERIMENT_NAME = "ALtest_BLR_DPT"
+const EXPERIMENT_NAME = "AL_US-SW-1"
 const OUTPUT_DIR = joinpath(@__DIR__, "results")
 
 # Data paths
@@ -26,14 +26,26 @@ const LARGE_TEST_DATA_THINNING = 10  # Thinning factor for large test data
 const INIT_CONFIGS_PATH = "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"  # Path to initial training candidates
 
 # Reference model specification
-const REF_MODEL = "../models/Si_ref_model.json" #"SW"  # Use "SW" for Stillinger-Weber or provide path to ACE model file (e.g., "../models/Si_ref_model.json")
+const REF_MODEL = "SW" # "../models/Si_ref_model.json" # "SW"  # Use "SW" for Stillinger-Weber or provide path to ACE model file (e.g., "../models/Si_ref_model.json")
 
 # Initial training set
-const N_INITIAL_TRAIN = 10  # Number of initial training samples
+const N_INITIAL_TRAIN = 3  # Number of initial training samples
 const INITIAL_TRAIN_RAND = true  # If true, randomly select initial training samples; if false, use first N_INITIAL_TRAIN
 
 # Active learning parameters
-const N_ACTIVE_ITERATIONS = 2  # Number of active learning iterations
+const N_ACTIVE_ITERATIONS = 100  # Number of active learning iterations
+
+# Query function selection
+# Options: "TSSID", "ABSID", "US", "TrainData", "HAL"
+const QUERY_FUNCTION = "US"
+
+# Query function specific parameters
+# For query_TrainData (callable by selecting QUERY_FUNCTION = "TrainData"):
+const TRAIN_DATA_NAME = "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"
+
+# For query_HAL:
+const TAU = 1.0  # Temperature annealing parameter for HAL
+const SIGMA_STOP = 0.1  # Stopping criterion for HAL
 
 # ACE model parameters
 const ACE_ELEMENTS = [:Si]
@@ -55,7 +67,7 @@ const FACTORIZATION = :svd
 const N_REPLICAS = 4
 const T_MIN = 300.0  # K
 const T_MAX = 900.0  # K
-const N_SAMPLES_PT = 100
+const N_SAMPLES_PT = 1000
 const BURNIN_PT = 10000
 const THIN_PT = 10
 const EXCHANGE_INTERVAL = 50
@@ -86,7 +98,7 @@ using ACEfit: bayesian_linear_regression
 using ACEpotentials: set_committee!
 
 using ACESIDopt: expected_red_variance, row_mapping, pred_variance
-using ACESIDopt.QueryModels: query_TSSID
+using ACESIDopt.QueryModels: query_TSSID, query_ABSID, query_US, query_TrainData, query_HAL
 using StatsPlots
 using Random
 
@@ -171,6 +183,12 @@ params = Dict(
         "n_initial_train" => N_INITIAL_TRAIN,
         "initial_train_rand" => INITIAL_TRAIN_RAND,
         "n_active_iterations" => N_ACTIVE_ITERATIONS
+    ),
+    "query_function" => Dict(
+        "method" => QUERY_FUNCTION,
+        "train_data_name" => TRAIN_DATA_NAME,
+        "tau" => TAU,
+        "sigma_stop" => SIGMA_STOP
     ),
     "ace_model" => Dict(
         "elements" => string.(ACE_ELEMENTS),
@@ -402,28 +420,65 @@ for t in 1:N_ACTIVE_ITERATIONS
     p_forces_train = plot_forces_comparison(raw_data_train, model, 
                                    joinpath(plots_dir, "train_forces_scatter_iter_$(lpad(t, 3, '0')).png"))
 
-    #%% Query next candidate using TSSID
-    selected_system = query_TSSID(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
-                                  plots_dir=plots_dir,
-                                  other_data_dir=other_data_dir,
-                                  pt_diagnostics_dir=pt_diagnostics_dir,
-                                  t=t,
-                                  N_REPLICAS=N_REPLICAS,
-                                  T_MIN=T_MIN,
-                                  T_MAX=T_MAX,
-                                  N_SAMPLES_PT=N_SAMPLES_PT,
-                                  BURNIN_PT=BURNIN_PT,
-                                  THIN_PT=THIN_PT,
-                                  EXCHANGE_INTERVAL=EXCHANGE_INTERVAL,
-                                  STEP_SIZE_PT=STEP_SIZE_PT,
-                                  R_CUT=R_CUT)
+    #%% Query next candidate using selected query function
+    println("\nUsing query function: $QUERY_FUNCTION")
+    
+    if QUERY_FUNCTION == "TSSID"
+        selected_system = query_TSSID(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
+                                      plots_dir=plots_dir,
+                                      other_data_dir=other_data_dir,
+                                      pt_diagnostics_dir=pt_diagnostics_dir,
+                                      t=t,
+                                      N_REPLICAS=N_REPLICAS,
+                                      T_MIN=T_MIN,
+                                      T_MAX=T_MAX,
+                                      N_SAMPLES_PT=N_SAMPLES_PT,
+                                      BURNIN_PT=BURNIN_PT,
+                                      THIN_PT=THIN_PT,
+                                      EXCHANGE_INTERVAL=EXCHANGE_INTERVAL,
+                                      STEP_SIZE_PT=STEP_SIZE_PT,
+                                      R_CUT=R_CUT)
+    elseif QUERY_FUNCTION == "ABSID"
+        selected_system = query_ABSID(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
+                                      plots_dir=plots_dir,
+                                      other_data_dir=other_data_dir,
+                                      pt_diagnostics_dir=pt_diagnostics_dir,
+                                      t=t,
+                                      N_REPLICAS=N_REPLICAS,
+                                      T_MIN=T_MIN,
+                                      T_MAX=T_MAX,
+                                      N_SAMPLES_PT=N_SAMPLES_PT,
+                                      BURNIN_PT=BURNIN_PT,
+                                      THIN_PT=THIN_PT,
+                                      EXCHANGE_INTERVAL=EXCHANGE_INTERVAL,
+                                      STEP_SIZE_PT=STEP_SIZE_PT,
+                                      R_CUT=R_CUT)
+    elseif QUERY_FUNCTION == "US"
+        selected_system = query_US(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights)
+    elseif QUERY_FUNCTION == "TrainData"
+        selected_system = query_TrainData(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
+                                         train_data_name=TRAIN_DATA_NAME)
+    elseif QUERY_FUNCTION == "HAL"
+        selected_system = query_HAL(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
+                                    TAU=TAU,
+                                    SIGMA_STOP=SIGMA_STOP,
+                                    plots_dir=plots_dir,
+                                    t=t,
+                                    T_MIN=T_MIN,
+                                    N_SAMPLES_PT=N_SAMPLES_PT,
+                                    BURNIN_PT=BURNIN_PT,
+                                    THIN_PT=THIN_PT,
+                                    STEP_SIZE_PT=STEP_SIZE_PT)
+    else
+        error("Unknown query function: $QUERY_FUNCTION. Options: TSSID, ABSID, US, TrainData, HAL")
+    end
     
     push!(raw_data_train, deepcopy(selected_system))
 
-    p_energy_train = plot_energy_comparison(raw_data_train, ts_model,
+    p_energy_train = plot_energy_comparison(raw_data_train, model,
                                joinpath(plots_dir, "train_energy_scatter_before_fit_iter_$(lpad(t, 3, '0')).png");marked=[length(raw_data_train)])
     
-    p_forces_train = plot_forces_comparison(raw_data_train, ts_model, 
+    p_forces_train = plot_forces_comparison(raw_data_train, model, 
                                    joinpath(plots_dir, "train_forces_scatter_before_fit_iter_$(lpad(t, 3, '0')).png");marked=[length(raw_data_train)])
 end
 

@@ -10,18 +10,17 @@ using AtomsCalculators: potential_energy, forces
 using Unitful
 using ExtXYZ
 using Plots
-using ACESIDopt.MSamplers: RWMCSampler, run_parallel_tempering_distributed
-using ACESIDopt: add_energy, add_energy_forces, row_mapping, pred_variance, expected_red_variance
+using ACESIDopt.MSamplers: RWMCSampler, run_parallel_tempering_distributed, run_HAL_sampler
+using ACESIDopt: add_energy, add_energy_forces, row_mapping, pred_variance, expected_red_variance, predictive_variance, convert_forces_to_svector
 using ACESIDopt: generate_ptd_diagnostics_and_log, plot_energy_comparison, plot_forces_comparison
 using Distributed
-
 import AtomsCalculators
 
 export query_TSSID, query_ABSID, query_US, query_TrainData, query_HAL
 
 # export potential_energy
 
-using AtomsBase: cell_vector, AbstractSystem
+using AtomsBase: cell_vectors, AbstractSystem
 """
     query_TSSID(raw_data_train, model, ts_model, ref_model, Σ, α, Psqrt, my_weights;
                 plots_dir, pt_diagnostics_dir, t,
@@ -253,8 +252,8 @@ function query_ABSID(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights
     ACEpotentials.save_model(ts_model, ts_model_filename)
     println("Saved TS model: $ts_model_filename")
 
-    # Load model on all workers
-    @everywhere loc_model = $model
+    # # Load model on all workers
+    #@everywhere loc_model = $model
 
     # Sample initial systems for surrogate PT
     n_available = length(raw_data_train)
@@ -290,7 +289,7 @@ function query_ABSID(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights
             println("  Starting surrogate PT...")
             sur_replicas, sur_temperatures, sur_mcmc_rates, sur_exchange_rates, sur_trajs = 
                 run_parallel_tempering_distributed(
-                    sampler_sur, initial_systems_sur,loc_model, N_REPLICAS, T_MIN, T_MAX;
+                    sampler_sur, initial_systems_sur, model, N_REPLICAS, T_MIN, T_MAX;
                     n_samples=N_SAMPLES_PT, burnin=BURNIN_PT, thin=THIN_PT,
                     exchange_interval=EXCHANGE_INTERVAL, collect_forces=false
                 )
@@ -390,25 +389,25 @@ function AtomsCalculators.potential_energy(atoms::AbstractSystem, bmodel::biased
 end
 
 """
-    query_US(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
-             plots_dir, other_data_dir, pt_diagnostics_dir, t,
-             N_REPLICAS, T_MIN, T_MAX, N_SAMPLES_PT, BURNIN_PT, THIN_PT,
-             EXCHANGE_INTERVAL, STEP_SIZE_PT, R_CUT)
+    query_US(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights)
 
 Perform Uniform Sampling (US) to select the next candidate system for active learning.
 Randomly samples a configuration from training data, randomizes positions uniformly
 in the simulation box, and evaluates with the reference model.
 
 # Arguments
-Same as `query_TSSID`
+- `raw_data_train`: Current training data
+- `model`: Fitted ACE model (unused, kept for signature compatibility)
+- `ref_model`: Reference model for ground truth evaluation
+- `Σ`, `α`, `Psqrt`, `my_weights`: Unused, kept for signature compatibility
 
 # Returns
 - `selected_system`: The selected system with randomized positions and reference energy/forces
 """
 function query_US(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
-                  plots_dir, other_data_dir, pt_diagnostics_dir, t,
-                  N_REPLICAS, T_MIN, T_MAX, N_SAMPLES_PT, BURNIN_PT, THIN_PT,
-                  EXCHANGE_INTERVAL, STEP_SIZE_PT, R_CUT)
+                  plots_dir=nothing, other_data_dir=nothing, pt_diagnostics_dir=nothing, t=nothing,
+                  N_REPLICAS=nothing, T_MIN=nothing, T_MAX=nothing, N_SAMPLES_PT=nothing, BURNIN_PT=nothing, THIN_PT=nothing,
+                  EXCHANGE_INTERVAL=nothing, STEP_SIZE_PT=nothing, R_CUT=nothing)
     
     println("\nUniform Sampling: Generating random configuration...")
     
@@ -438,16 +437,14 @@ end
 
 """
     query_TrainData(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
-                   train_data_name,
-                   plots_dir, other_data_dir, pt_diagnostics_dir, t,
-                   N_REPLICAS, T_MIN, T_MAX, N_SAMPLES_PT, BURNIN_PT, THIN_PT,
-                   EXCHANGE_INTERVAL, STEP_SIZE_PT, R_CUT)
+                   train_data_name)
 
 Perform Random Data Sampling to select the next candidate system for active learning.
 Loads data from an external extended XYZ file and randomly samples a configuration.
 
 # Arguments
-- Same as `query_US`, plus:
+- `raw_data_train`, `model`, `Σ`, `α`, `Psqrt`, `my_weights`: Unused, kept for signature compatibility
+- `ref_model`: Reference model for ground truth evaluation
 - `train_data_name`: Path to extended XYZ file containing candidate configurations
 
 # Returns
@@ -455,9 +452,9 @@ Loads data from an external extended XYZ file and randomly samples a configurati
 """
 function query_TrainData(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
                         train_data_name,
-                        plots_dir, other_data_dir, pt_diagnostics_dir, t,
-                        N_REPLICAS, T_MIN, T_MAX, N_SAMPLES_PT, BURNIN_PT, THIN_PT,
-                        EXCHANGE_INTERVAL, STEP_SIZE_PT, R_CUT)
+                        plots_dir=nothing, other_data_dir=nothing, pt_diagnostics_dir=nothing, t=nothing,
+                        N_REPLICAS=nothing, T_MIN=nothing, T_MAX=nothing, N_SAMPLES_PT=nothing, BURNIN_PT=nothing, THIN_PT=nothing,
+                        EXCHANGE_INTERVAL=nothing, STEP_SIZE_PT=nothing, R_CUT=nothing)
     
     println("\nRandom Data Sampling: Loading data from file...")
     
@@ -469,45 +466,47 @@ function query_TrainData(raw_data_train, model, ref_model, Σ, α, Psqrt, my_wei
     
     # Randomly sample one configuration
     random_idx = rand(1:n_candidates)
-    selected_system = deepcopy(candidate_data[random_idx])
+    selected_system = candidate_data[random_idx]
     
     println("Randomly selected configuration $random_idx from file")
     
-    # Compute energy and forces with reference model
-    println("Computing energy and forces with reference potential...")
-    ref_energy = potential_energy(selected_system, ref_model)
-    ref_forces = forces(selected_system, ref_model)
+
     
-    add_energy_forces(selected_system, ref_energy, ref_forces)
-    
-    println("Selected configuration with energy: $ref_energy")
-    
-    return selected_system
+    return convert_forces_to_svector(selected_system)
 end
 
 """
     query_HAL(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
               TAU, SIGMA_STOP,
-              plots_dir, other_data_dir, pt_diagnostics_dir, t,
-              N_REPLICAS, T_MIN, T_MAX, N_SAMPLES_PT, BURNIN_PT, THIN_PT,
-              EXCHANGE_INTERVAL, STEP_SIZE_PT, R_CUT)
+              plots_dir, t, T_MIN, N_SAMPLES_PT, BURNIN_PT, THIN_PT, STEP_SIZE_PT)
 
 Perform Hamiltonian Annealed Learning (HAL) sampling to select the next candidate system.
 Runs HAL sampler and generates diagnostic plots of the sampling trajectory.
 
 # Arguments
-- Same as `query_TSSID`, plus:
+- `raw_data_train`: Current training data
+- `model`: Fitted ACE model
+- `ref_model`: Reference model for ground truth evaluation
+- `Σ`: Covariance matrix from Bayesian regression
+- `α`, `Psqrt`, `my_weights`: Unused, kept for signature compatibility
 - `TAU`: Temperature annealing parameter for HAL
 - `SIGMA_STOP`: Stopping criterion based on predicted standard deviation
+- `plots_dir`: Directory for plots
+- `t`: Current iteration number
+- `T_MIN`: Minimum temperature for sampling
+- `N_SAMPLES_PT`: Number of samples
+- `BURNIN_PT`: Burn-in steps
+- `THIN_PT`: Thinning factor
+- `STEP_SIZE_PT`: Step size for MCMC sampler
 
 # Returns
 - `system_max`: The selected system with maximum acquisition value and reference energy/forces
 """
 function query_HAL(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
                    TAU, SIGMA_STOP,
-                   plots_dir, other_data_dir, pt_diagnostics_dir, t,
-                   N_REPLICAS, T_MIN, T_MAX, N_SAMPLES_PT, BURNIN_PT, THIN_PT,
-                   EXCHANGE_INTERVAL, STEP_SIZE_PT, R_CUT)
+                   plots_dir, t, T_MIN, N_SAMPLES_PT, BURNIN_PT, THIN_PT, STEP_SIZE_PT,
+                   other_data_dir=nothing, pt_diagnostics_dir=nothing,
+                   N_REPLICAS=nothing, T_MAX=nothing, EXCHANGE_INTERVAL=nothing, R_CUT=nothing)
     
     println("\nHAL Sampling: Running Hamiltonian Annealed Learning...")
     println("  TAU: $TAU")
@@ -525,7 +524,7 @@ function query_HAL(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
     # Run HAL sampler
     println("\nRunning HAL sampler...")
     samples, acceptance_rate, traj, system_max, std_max = run_HAL_sampler(
-        sampler, initial_system, model, T_MIN, Σ;
+        sampler, initial_system, model, T_MIN, Σ, Psqrt;
         τ=TAU, σ_stop=SIGMA_STOP,
         n_samples=N_SAMPLES_PT, burnin=BURNIN_PT, thin=THIN_PT,
         collect_forces=false
@@ -632,3 +631,4 @@ function randomize_positions!(atoms)
     end
 end
 
+end # module
