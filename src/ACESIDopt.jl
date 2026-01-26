@@ -8,7 +8,7 @@ include("./fitmodel.jl")
 include("./msamplers.jl")
 include("./putils.jl")
 include("./harmonicCalculator.jl")
-
+include("./querymodels.jl")
 # Export parameter I/O functions
 export save_simulation_parameters, load_simulation_parameters
 

@@ -8,14 +8,14 @@ SIMULATION PARAMETERS - Set all parameters here
 =============================================================================#
 
 # Random seeds
-const INITIAL_SEED = 43
-const SIMULATION_SEED = 42
+const INITIAL_SEED = 430
+const SIMULATION_SEED = 420
 
 # Parallel computing
 const N_WORKERS = 4
 
 # Input/Output paths
-const SIMULATION_NAME = "ptd_ACE_silicon_dia-primitive-2-large"
+const SIMULATION_NAME = "ptd_ACE_silicon_dia-primitive-2-large-c"
 const INPUT_DATA_PATH = joinpath(@__DIR__, "..", "data", "Si-diamond-primitive-2atom-large.xyz")
 const OUTPUT_DIR = joinpath(@__DIR__, "results")
 
@@ -47,6 +47,8 @@ END OF PARAMETERS
 =============================================================================#
 
 using ACESIDopt: add_energy_forces, save_simulation_parameters, load_simulation_parameters
+using Random
+using Distributed
 
 Random.seed!(INITIAL_SEED)
 # Add worker processes if not already added

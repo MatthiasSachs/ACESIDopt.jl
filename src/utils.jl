@@ -6,6 +6,7 @@ using LinearAlgebra
 using Unitful: ustrip, @u_str
 using ExtXYZ: Atoms
 using StaticArrays: SVector
+export predictive_variance
 
 function mflexiblesystem(sys)
    c3ll = cell(sys)
@@ -87,6 +88,19 @@ function pred_variance(Σ, xstar::Vector{T}, alpha) where {T}
     return transpose(xstar) * Σ * xstar + 1/alpha
 end
 
+
+function predictive_variance(x::Vector, covar::Matrix; var_e=0.0)
+    return dot(x, covar * x) + var_e
+end
+function predictive_variance(x::Vector, covar::Matrix, Psqrt;  var_e=0.0)
+    xt = Psqrt \ x
+    return predictive_variance(xt, covar; var_e=var_e)
+end
+function predictive_variance(model, atom::AbstractSystem, covar::Matrix; Psqrt=I, var_e=0.0)
+    # Check wheter this should be indeed the sum or variance
+    x = sum(site_descriptors(atom, model))
+    return predictive_variance(x, covar, Psqrt; var_e=var_e)
+end
 
 """
 Computes the expected reduction in variance after observing a candidate point `xtilde`

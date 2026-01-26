@@ -1277,4 +1277,135 @@ function run_parallel_tempering_distributed(sampler, initial_system, model, n_re
     return all_samples, temperatures, mcmc_acceptance_rates, exchange_acceptance_rates, all_trajs
 end
 
+struct HALModel{T}
+    model
+    Σ::Matrix{T}
+    Psqrt
+    τ::T
+end
+
+function AtomsCalculators.potential_energy(atoms::AbstractSystem, bmodel::HALModel)
+    uc =  .5 * bmodel.τ * sqrt(predictive_variance(bmodel.model, atoms, bmodel.Σ; Psqrt=bmodel.Psqrt))
+    return potential_energy(atoms, bmodel.model) - uc * u"eV"
+end
+
+
+"""
+    run_HAL_sampler(sampler, initial_system, model, T, Σ; τ=1.0, σ_stop=.1, n_samples::Int=1000, burnin::Int=1000, thin::Int=10, collect_forces::Bool=false)
+
+Run MCMC sampling using the specified sampler configuration.
+
+This is a unified interface that works with both RWMCSampler and MALASampler.
+The dispatch to specific algorithms happens at the step! level.
+
+# Parameters
+- `sampler`: Either RWMCSampler or MALASampler instance (contains step_size)
+- `initial_system`: starting configuration
+- `model`: potential model (e.g., ACE potential or HarmonicCalculator)
+- `T`: temperature (K)
+- `Σ`: covariance matrix of the posterior distribution
+- `τ`: non-negative scaling parameter for the biasing strength of the HAL potential
+- `σ_stop`: threshold for predictive standard deviation. Sampling terminates once this threshold has been reached.
+- `n_samples`: number of samples to collect (after burnin and thinning)
+- `burnin`: number of initial steps to discard
+- `thin`: keep every thin-th sample
+- `collect_forces`: whether to collect forces in trajectory (only applies to MALA)
+
+# Returns
+- `(samples, acceptance_rate, traj, system_max, std_max)`: collected samples, acceptance rate, trajectory data
+
+# Examples
+```julia
+# RWMC sampling
+rwmc = RWMCSampler(step_size=0.1)
+samples, acc_rate, traj, system_max, std_max = run_HAL_sampler(rwmc, system, model, 300.0, Σ, τ; n_samples=5000, burnin=2000, thin=5, collect_forces=true)
+
+# MALA sampling currently not supported with HAL potential
+mala = MALASampler(step_size=0.1)
+samples, acc_rate, traj, system_max, std_max = run_HAL_sampler(mala, system, model, 300.0, Σ, τ; n_samples=5000, burnin=2000, thin=5, collect_forces=true)
+```
+"""
+function run_HAL_sampler(sampler, initial_system, model, T, Σ; τ=1.0, σ_stop=.1, n_samples::Int=1000, burnin::Int=1000, thin::Int=10, collect_forces::Bool=false)
+    system_max = deepcopy(initial_system)
+    std_max = sqrt(predictive_variance(model, system_max, Σ; Psqrt))
+    
+    samples = []
+    if collect_forces
+        traj = (energy=Float64[], forces=[], acc_rate=Float64[], std=Float64[])
+    else
+        traj = (energy=Float64[], acc_rate=Float64[], std=Float64[])
+    end
+    current_system = deepcopy(initial_system)
+    
+    n_total = burnin + n_samples * thin
+    n_accepted = 0
+    n_accepted_since_last_sample = 0
+    steps_since_last_sample = 0
+    
+    sampler_type = typeof(sampler)
+    println("Running $(sampler_type) sampling...")
+    println("Parameters: T=$T K, step_size=$(sampler.step_size) Å")
+    println("Burnin: $burnin steps")
+    println("Collecting $n_samples samples with thinning=$thin")
+    if collect_forces && sampler isa MALASampler
+        println("Force collection: enabled")
+    end
+    @assert sampler isa RWMCSampler "HAL potential currently only supported with RWMCSampler"
+    halmodel = HALModel(model, Σ, sqrtm(Σ), τ)
+    @showprogress for step_num in 1:n_total
+        accepted, ΔU, U_current, f_current = step!(current_system, sampler, halmodel, T)
+        
+        if accepted
+            n_accepted += 1
+            n_accepted_since_last_sample += 1
+        end
+        steps_since_last_sample += 1
+        current_std = sqrt(predictive_variance(model, current_system, halmodel.Σ; Psqrt=halmodel.Psqrt))
+        if current_std >= std_max
+            system_max = deepcopy(current_system)
+            std_max = current_std
+            println("New maximum std reached: $(round(std_max, digits=4)) at step $step_num")
+        end
+        # Collect samples after burnin with thinning
+        if step_num > burnin && (step_num - burnin) % thin == 0
+            push!(samples, deepcopy(current_system))
+            push!(traj.energy, U_current)
+            push!(traj.std, current_std)
+            
+            # Compute acceptance rate since last sample
+            local_acc_rate = steps_since_last_sample > 0 ? n_accepted_since_last_sample / steps_since_last_sample : 0.0
+            push!(traj.acc_rate, local_acc_rate)
+            
+            # Reset counters
+            n_accepted_since_last_sample = 0
+            steps_since_last_sample = 0
+            
+            if collect_forces 
+                if f_current !== nothing
+                    push!(traj.forces, deepcopy(f_current))
+                else
+                    push!(traj.forces, forces(current_system, model))
+                end
+            end
+        end
+        
+        if step_num % 1000 == 0
+            acc_rate = n_accepted / step_num
+            println("Step $step_num / $n_total, Acceptance rate: $(round(acc_rate, digits=3))")
+        end
+        if current_std > σ_stop
+            println("Stopping criterion reached: predictive std $(round(current_std, digits=4)) > threshold $(round(σ_stop, digits=4)) at step $step_num")
+            break
+        end
+    end
+    
+    acceptance_rate = n_accepted / n_total
+    println("$(sampler_type) sampling complete!")
+    println("Final acceptance rate: $(round(acceptance_rate, digits=3))")
+    
+    return samples, acceptance_rate, traj, system_max, std_max
+end
+
+
+
 end  # module MSamplers

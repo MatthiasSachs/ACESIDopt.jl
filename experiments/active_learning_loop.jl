@@ -15,7 +15,7 @@ const RANDOM_SEED = 2234
 const N_WORKERS = 4
 
 # Experiment identification
-const EXPERIMENT_NAME = "AL_ACE_silicon_dia-primitive-2-large-d"
+const EXPERIMENT_NAME = "AL_ACE_silicon_dia-primitive-2-large-e" # "AL_ACE_silicon_dia-primitive-2-large-d"
 const OUTPUT_DIR = joinpath(@__DIR__, "results")
 
 # Data paths

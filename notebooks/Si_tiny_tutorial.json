@@ -1,6 +1,7 @@
 {
    "project": {
       "deps": {
+         "Statistics": "10745b16-79ce-11e8-11f9-7d13ad32a3b2",
          "MLJ": "add582a8-e3ab-11e8-2d5e-e98b27df1bc7",
          "ASEconvert": "3da9722f-58c2-4165-81be-b4d7253e8fd2",
          "Distributions": "31c24e10-a181-5473-b8eb-7969acd0382f",
@@ -9,6 +10,7 @@
          "ACEfit": "ad31a8ef-59f5-4a01-b543-a85c2f73e95c",
          "AtomsCalculators": "a3e0e189-c65a-42c1-833c-339540406eb1",
          "Distributed": "8ba89e20-285c-5b6f-9357-94700520ee1b",
+         "EmpiricalPotentials": "38527215-9240-4c91-a638-d4250620c9e2",
          "StatsPlots": "f3b207a7-027a-5e70-b257-86293d7955fd",
          "AtomsBuilder": "f5cc8831-eeb7-4288-8d9f-d6c1ddb77004",
          "LinearAlgebra": "37e2e46d-f89d-539d-b4ee-838fcccc9c8e",
@@ -17,6 +19,7 @@
          "AtomsBase": "a963bdd2-2df7-4f54-a1ee-49d51e6be12a",
          "MultivariateStats": "6f286f6a-111f-5878-ab1e-185364afe411",
          "IJulia": "7073ff75-c697-5162-941a-fcdaad2a7d2a",
+         "YAML": "ddb6d928-2868-570f-bddf-ab3f9cf99eb6",
          "Plots": "91a5bcdd-55d7-5caf-9e0b-520d859cae80",
          "ExtXYZ": "352459e4-ddd7-4360-8937-99dcb397b478",
          "ProgressMeter": "92933f4c-e287-5a05-a399-4b506db050ca",
@@ -32,6 +35,7 @@
       "name": "ACESIDopt",
       "uuid": "8b8c1c5e-7f3c-4d9e-8e1a-2b3c4d5e6f7a",
       "compat": {
+         "Statistics": "1.11.1",
          "MLJ": "0.19.2",
          "ASEconvert": "0.2.0",
          "Distributions": "0.25.123",
@@ -40,6 +44,7 @@
          "ACEfit": "0.3.0",
          "AtomsCalculators": "0.2.3",
          "Distributed": "1.11.0",
+         "EmpiricalPotentials": "0.2.5",
          "StatsPlots": "0.15.8",
          "AtomsBuilder": "0.2.2",
          "LinearAlgebra": "1.11.0",
@@ -48,6 +53,7 @@
          "AtomsBase": "0.5.2",
          "MultivariateStats": "0.10.3",
          "IJulia": "1.33.0",
+         "YAML": "0.4.16",
          "Plots": "1.41.3",
          "ExtXYZ": "0.2.2",
          "ProgressMeter": "1.11.0",
@@ -6645,7 +6651,7 @@
       },
       "manifest_format": "2.0",
       "julia_version": "1.11.7",
-      "project_hash": "a2c1f970e0a80b61e6d8f864511acaeec51ad345"
+      "project_hash": "d47fde2d8a47017b8041f4cc49b222be1d49099b"
    },
    "model_parameters": [
       -3.378595221923447,
