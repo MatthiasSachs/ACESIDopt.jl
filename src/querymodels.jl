@@ -409,38 +409,20 @@ function query_US(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
                   plots_dir=nothing, other_data_dir=nothing, pt_diagnostics_dir=nothing, t=nothing,
                   N_REPLICAS=nothing, T_MIN=nothing, T_MAX=nothing, N_SAMPLES_PT=nothing, BURNIN_PT=nothing, THIN_PT=nothing,
                   EXCHANGE_INTERVAL=nothing, STEP_SIZE_PT=nothing, R_CUT=nothing)
-    Emax = 1e3
     println("\nUniform Sampling: Generating random configuration...")
     
     # Sample a random configuration from training data
-    n_available = length(raw_data_train)
-    random_idx = rand(1:n_available)
-    selected_system = deepcopy(raw_data_train[random_idx])
+    # n_available = length(raw_data_train)
+    # random_idx = rand(1:n_available)
+    selected_system = deepcopy(raw_data_train[1])
     
-    println("Sampled configuration $random_idx from training data")
+    #println("Sampled configuration $random_idx from training data")
     
-    # Randomize positions until energy is below Emax
-    max_attempts = 10000
-    attempt = 0
-    ref_energy = Inf * u"eV"
+    # Randomize positions uniformly in the simulation box
+    randomize_positions!(selected_system)
     
-    while ustrip(u"eV", ref_energy) > Emax && attempt < max_attempts
-        attempt += 1
-        
-        # Randomize positions uniformly in the simulation box
-        randomize_positions!(selected_system)
-        
-        # Compute energy with reference model
-        ref_energy = potential_energy(selected_system, ref_model)
-        
-        # if attempt % 100 == 0
-        #     println("  Attempt $attempt: Energy = $(ustrip(u\"eV\", ref_energy)) eV")
-        # end
-    end
-    
-    if attempt >= max_attempts
-        @warn "Could not find configuration with energy below Emax=$Emax eV after $max_attempts attempts. Using last configuration."
-    end
+    # Compute energy with reference model
+    ref_energy = potential_energy(selected_system, ref_model)
     
     # Compute forces with reference model
     println("Computing forces with reference potential...")
