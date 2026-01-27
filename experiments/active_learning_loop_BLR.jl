@@ -15,33 +15,46 @@ const RANDOM_SEED = 2234
 const N_WORKERS = 4
 
 # Experiment identification
-const EXPERIMENT_NAME = "AL_US-SW-1"
+const EXPERIMENT_NAME = "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/examples/../data/Si-diamond-primitive-8atoms.xyz"
+"AL_ABSID_BLR_20it-ACE-320K6-K1200"
+# "AL_ABSID_BLR_10it-SW"
+#"AL_US-SW-5-demo"
 const OUTPUT_DIR = joinpath(@__DIR__, "results")
 
 # Data paths
-const TEST_DATA_PATH = "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"
+const TEST_DATA_PATH = "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_dia-primitive-2-high-K1200/data/replica_1_samples.xyz"
+#"/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_dia-primitive-2-temp/data/replica_1_samples.xyz"
+# "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_dia-primitive-2-temp/data/replica_1_samples.xyz"
+# "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_dia-primitive-2-temp/data/replica_1_samples.xyz"
+# "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_DW_dia-primitive-2-temp/data/replica_2_samples.xyz"
+#"/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"
+# "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-very-large-high-temp/data/replica_1_samples.xyz"
+#"/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"
 const LARGE_TEST_DATA_PATH = TEST_DATA_PATH
 const TEST_THINNING = 10  # Thinning factor for test data
 const LARGE_TEST_DATA_THINNING = 10  # Thinning factor for large test data
-const INIT_CONFIGS_PATH = "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"  # Path to initial training candidates
+const INIT_CONFIGS_PATH = TEST_DATA_PATH # "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"  # Path to initial training candidates
 
 # Reference model specification
-const REF_MODEL = "SW" # "../models/Si_ref_model.json" # "SW"  # Use "SW" for Stillinger-Weber or provide path to ACE model file (e.g., "../models/Si_ref_model.json")
+const REF_MODEL = "../models/Si_ref_model-small-2.json"
+#"SW" # "../models/Si_ref_model.json" # "SW"  # Use "SW" for Stillinger-Weber or provide path to ACE model file (e.g., "../models/Si_ref_model.json")
 
 # Initial training set
-const N_INITIAL_TRAIN = 3  # Number of initial training samples
+const N_INITIAL_TRAIN = 2  # Number of initial training samples
 const INITIAL_TRAIN_RAND = true  # If true, randomly select initial training samples; if false, use first N_INITIAL_TRAIN
 
 # Active learning parameters
-const N_ACTIVE_ITERATIONS = 100  # Number of active learning iterations
+const N_ACTIVE_ITERATIONS = 20  # Number of active learning iterations
+const E_MAX_ACC = -320.6  # Maximum energy (eV) threshold for accepting queried configurations
 
 # Query function selection
 # Options: "TSSID", "ABSID", "US", "TrainData", "HAL"
-const QUERY_FUNCTION = "US"
+const QUERY_FUNCTION = "ABSID"
 
 # Query function specific parameters
 # For query_TrainData (callable by selecting QUERY_FUNCTION = "TrainData"):
-const TRAIN_DATA_NAME = "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"
+const TRAIN_DATA_NAME = "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_DW_dia-primitive-2-temp-2/data/replica_1_samples.xyz"
+# "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"
 
 # For query_HAL:
 const TAU = 1.0  # Temperature annealing parameter for HAL
@@ -67,12 +80,12 @@ const FACTORIZATION = :svd
 const N_REPLICAS = 4
 const T_MIN = 300.0  # K
 const T_MAX = 900.0  # K
-const N_SAMPLES_PT = 1000
+const N_SAMPLES_PT = 100 #1000
 const BURNIN_PT = 10000
-const THIN_PT = 10
+const THIN_PT = 20 #100
 const EXCHANGE_INTERVAL = 50
 const STEP_SIZE_PT = 0.02  # Å
-const R_CUT = 5.5  # Å (for RDF/ADF analysis)
+const R_CUT = 7.5  # Å (for RDF/ADF analysis)
 
 # Cholesky jitter parameters
 const MAX_JITTER_FRACTION = 1e-3
@@ -367,6 +380,9 @@ raw_data["init"] = convert_forces_to_svector.(raw_data["init_all"][init_train_in
 raw_data_train = deepcopy(raw_data["init"])
 println("Initialized training set with $(length(raw_data_train)) configurations")
 
+# Counter for rejected queries
+n_rejected = 0
+
 for t in 1:N_ACTIVE_ITERATIONS
     println("\n" * "="^70)
     println("Active Learning Iteration $t")
@@ -473,13 +489,26 @@ for t in 1:N_ACTIVE_ITERATIONS
         error("Unknown query function: $QUERY_FUNCTION. Options: TSSID, ABSID, US, TrainData, HAL")
     end
     
-    push!(raw_data_train, deepcopy(selected_system))
-
-    p_energy_train = plot_energy_comparison(raw_data_train, model,
-                               joinpath(plots_dir, "train_energy_scatter_before_fit_iter_$(lpad(t, 3, '0')).png");marked=[length(raw_data_train)])
+    # Check if selected system energy is below threshold
+    selected_energy = selected_system.system_data.energy
+    println("\nSelected system energy: $selected_energy eV")
     
-    p_forces_train = plot_forces_comparison(raw_data_train, model, 
-                                   joinpath(plots_dir, "train_forces_scatter_before_fit_iter_$(lpad(t, 3, '0')).png");marked=[length(raw_data_train)])
+    if selected_energy <= E_MAX_ACC
+        push!(raw_data_train, deepcopy(selected_system))
+        println("Configuration ACCEPTED (E = $selected_energy eV <= E_MAX_ACC = $E_MAX_ACC eV)")
+        println("Training set size: $(length(raw_data_train))")
+        
+        p_energy_train = plot_energy_comparison(raw_data_train, model,
+                                   joinpath(plots_dir, "train_energy_scatter_before_fit_iter_$(lpad(t, 3, '0')).png");marked=[length(raw_data_train)])
+        
+        p_forces_train = plot_forces_comparison(raw_data_train, model, 
+                                       joinpath(plots_dir, "train_forces_scatter_before_fit_iter_$(lpad(t, 3, '0')).png");marked=[length(raw_data_train)])
+    else
+        global n_rejected += 1
+        println("Configuration REJECTED (E = $selected_energy eV > E_MAX_ACC = $E_MAX_ACC eV)")
+        println("Total rejected queries: $n_rejected")
+        println("Training set size remains: $(length(raw_data_train))")
+    end
 end
 
 #%%
@@ -541,6 +570,19 @@ println("\n" * "="^70)
 println("Active Learning with Distributed Parallel Tempering Complete!")
 println("Using ACEfit.BLR for model fitting")
 println("="^70)
+println("\nQuery Statistics:")
+println("  Total iterations: $N_ACTIVE_ITERATIONS")
+println("  Accepted configurations: $(length(raw_data_train) - N_INITIAL_TRAIN)")
+println("  Rejected configurations: $n_rejected")
+#println("  Acceptance rate: $(@sprintf(\"%.1f%%\", (N_ACTIVE_ITERATIONS - n_rejected) / N_ACTIVE_ITERATIONS * 100))")
+println("  Final training set size: $(length(raw_data_train))")
+println("  Energy threshold (E_MAX_ACC): $E_MAX_ACC eV")
+println("="^70)
 
 # Optional: Remove workers if desired
-# rmprocs(workers())
+rmprocs(workers())
+
+#%%
+# for d in raw_data_train
+#     println("Configuration energy: $(d.system_data.energy) eV, $(potential_energy(d, ref_model)) eV (ref model), $(potential_energy(d, model)) eV (ACEfit.BLR model)")
+# end

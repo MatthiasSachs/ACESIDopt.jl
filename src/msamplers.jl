@@ -1287,7 +1287,7 @@ struct HALModel{T}
 end
 
 function AtomsCalculators.potential_energy(atoms::AbstractSystem, bmodel::HALModel)
-    uc =  .5 * bmodel.τ * sqrt(predictive_variance(bmodel.model, atoms, bmodel.Σ; Psqrt=bmodel.Psqrt))
+    uc =  .5 * bmodel.τ * sqrt(max(0, predictive_variance(bmodel.model, atoms, bmodel.Σ; Psqrt=bmodel.Psqrt)))
     return potential_energy(atoms, bmodel.model) - uc * u"eV"
 end
 
@@ -1321,14 +1321,14 @@ The dispatch to specific algorithms happens at the step! level.
 ```julia
 # RWMC sampling
 rwmc = RWMCSampler(step_size=0.1)
-samples, acc_rate, traj, system_max, std_max = run_HAL_sampler(rwmc, system, model, 300.0, Σ, Psqrt; τ=1.0, σ_stop=0.1, n_samples=5000, burnin=2000, thin=5, collect_forces=false)
+samples, acc_rate, traj, system_max, std_max = run_HAL_sampler(rwmc, system, model, 300.0, Σ, Psqrt; τ=1.0, σ_stop=0.1, n_samples=5000, burnin=0, thin=5, collect_forces=false)
 
 # MALA sampling currently not supported with HAL potential
 ```
 """
-function run_HAL_sampler(sampler, initial_system, model, T, Σ, Psqrt; τ=1.0, σ_stop=.1, n_samples::Int=1000, burnin::Int=1000, thin::Int=10, collect_forces::Bool=false)
+function run_HAL_sampler(sampler, initial_system, model, T, Σ, Psqrt; τ=1.0, σ_stop=.1, n_samples::Int=1000, burnin::Int=0, thin::Int=10, collect_forces::Bool=false)
     system_max = deepcopy(initial_system)
-    std_max = sqrt(predictive_variance(model, system_max, Σ; Psqrt=Psqrt))
+    std_max = sqrt(max(0,predictive_variance(model, system_max, Σ; Psqrt=Psqrt)))
     
     samples = []
     if collect_forces
@@ -1361,11 +1361,11 @@ function run_HAL_sampler(sampler, initial_system, model, T, Σ, Psqrt; τ=1.0, �
             n_accepted_since_last_sample += 1
         end
         steps_since_last_sample += 1
-        current_std = sqrt(predictive_variance(model, current_system, halmodel.Σ; Psqrt=halmodel.Psqrt))
+        current_std = sqrt(max(0,predictive_variance(model, current_system, halmodel.Σ; Psqrt=halmodel.Psqrt)))
         if current_std >= std_max
             system_max = deepcopy(current_system)
             std_max = current_std
-            println("New maximum std reached: $(round(std_max, digits=4)) at step $step_num")
+            #println("New maximum std reached: $(round(std_max, digits=4)) at step $step_num")
         end
         # Collect samples after burnin with thinning
         if step_num > burnin && (step_num - burnin) % thin == 0

@@ -8,30 +8,32 @@ SIMULATION PARAMETERS - Set all parameters here
 =============================================================================#
 
 # Random seeds
-const INITIAL_SEED = 430
-const SIMULATION_SEED = 420
+const INITIAL_SEED = 43
+const SIMULATION_SEED = 42
 
 # Parallel computing
 const N_WORKERS = 4
 
 # Input/Output paths
-const SIMULATION_NAME = "ptd_ACE_silicon_dia-primitive-2-large-high-temp"
-const INPUT_DATA_PATH = joinpath(@__DIR__, "..", "data", "Si-diamond-primitive-2atom-large.xyz")
+const SIMULATION_NAME = "ptd_ACE_dia-primitive-8atoms-high-K1200"
+# "ptd_ACE_dia-primitive-2-temp-very-large"
+#"ptd_ACE_silicon_dia-primitive-2-very-very-large-high-temp"
+const INPUT_DATA_PATH = joinpath(@__DIR__, "..", "data", "Si-diamond-primitive-8atoms.xyz") #joinpath(@__DIR__, "..", "data", "Si-diamond-primitive-2atom.xyz")
 const OUTPUT_DIR = joinpath(@__DIR__, "results")
 
 # Model specification
-const MODEL ="SW"  # "../models/Si_ref_model.json"
+const MODEL = "../models/Si_ref_model-small-2.json"
 #"SW"  # Use "SW" for Stillinger-Weber or provide path to ACE model file (e.g., "../models/Si_ref_model.json")
 
 # Parallel tempering parameters
-const N_REPLICAS = 4
-const T_MIN = 500.0  # K
-const T_MAX = 1200.0  # K
+const N_REPLICAS = 2
+const T_MIN = 1200.0  # K
+const T_MAX = 1600.0  # K
 
 # MCMC sampling parameters
 const N_SAMPLES = 10000 #10000
 const BURNIN = 20000
-const THIN = 20
+const THIN = 2
 const EXCHANGE_INTERVAL = 20
 const STEP_SIZE = 0.01  # Å
 
@@ -590,7 +592,7 @@ temperatures_file = joinpath(data_dir, "temperatures.yaml")
 temp_dict = Dict("temperatures" => Dict(i => temperatures[i] for i in 1:N_REPLICAS))
 save_simulation_parameters(temperatures_file, temp_dict)
 println("Saved temperatures to: $temperatures_file")
-
+#%%
 for i in 1:N_REPLICAS
     # Add energies and forces to all samples in replica i
     println("\nProcessing Replica $i (T=$(round(temperatures[i], digits=1)) K)...")

@@ -151,8 +151,8 @@ function query_TSSID(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights
     cand_samples = cand_replicas[1]
     
     # Add energies to surrogate samples and energy+forces to candidate samples
-    raw_data_tsur_nf = [at for at in add_energy(sur_samples, model)]
-    raw_data_tcand = [at for at in add_energy_forces(cand_samples, model)]
+    raw_data_tsur_nf = [at for at in add_energy(sur_samples,model)]
+    raw_data_tcand = [at for at in add_energy_forces(cand_samples,model)]
     
     data_tsur_nf = make_atoms_data(raw_data_tsur_nf, model; 
                                 energy_key = "energy", 
@@ -192,7 +192,7 @@ function query_TSSID(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights
     ref_energy = potential_energy(selected_system, ref_model)
     ref_forces = forces(selected_system, ref_model)
     
-    add_energy_forces(selected_system, ref_energy, ref_forces)
+    selected_system = add_energy_forces(selected_system, ref_energy, ref_forces)
     
     return selected_system
 end
@@ -287,6 +287,7 @@ function query_ABSID(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights
     @sync begin
         @async begin
             println("  Starting surrogate PT...")
+            bmodel = biasedATModel(model, Σ, Psqrt, T_MIN)
             sur_replicas, sur_temperatures, sur_mcmc_rates, sur_exchange_rates, sur_trajs = 
                 run_parallel_tempering_distributed(
                     sampler_sur, initial_systems_sur, model, N_REPLICAS, T_MIN, T_MAX;
@@ -298,10 +299,10 @@ function query_ABSID(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights
         
         @async begin
             println("  Starting candidate PT...")
-            bmodel = biasedATModel(model, Σ, Psqrt, T_MIN)
+            # bmodel = biasedATModel(model, Σ, Psqrt, T_MIN)
             cand_replicas, cand_temperatures, cand_mcmc_rates, cand_exchange_rates, cand_trajs = 
                 run_parallel_tempering_distributed(
-                    sampler_cand, initial_systems_cand, bmodel, N_REPLICAS, T_MIN, T_MAX;
+                    sampler_cand, initial_systems_cand, model, N_REPLICAS, T_MIN, T_MAX;
                     n_samples=N_SAMPLES_PT, burnin=BURNIN_PT, thin=THIN_PT,
                     exchange_interval=EXCHANGE_INTERVAL, collect_forces=false
                 )
@@ -329,7 +330,7 @@ function query_ABSID(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights
     
     # Add energies to surrogate samples and energy+forces to candidate samples
     raw_data_tsur_nf = [at for at in add_energy(sur_samples, model)]
-    raw_data_tcand = [at for at in add_energy_forces(cand_samples, model)]
+    raw_data_tcand = [at for at in add_energy_forces(cand_samples,model)]
     
     data_tsur_nf = make_atoms_data(raw_data_tsur_nf, model; 
                                 energy_key = "energy", 
@@ -369,7 +370,7 @@ function query_ABSID(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights
     ref_energy = potential_energy(selected_system, ref_model)
     ref_forces = forces(selected_system, ref_model)
     
-    add_energy_forces(selected_system, ref_energy, ref_forces)
+    selected_system = add_energy_forces(selected_system, ref_energy, ref_forces)
     
     return selected_system
 end
@@ -408,7 +409,7 @@ function query_US(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
                   plots_dir=nothing, other_data_dir=nothing, pt_diagnostics_dir=nothing, t=nothing,
                   N_REPLICAS=nothing, T_MIN=nothing, T_MAX=nothing, N_SAMPLES_PT=nothing, BURNIN_PT=nothing, THIN_PT=nothing,
                   EXCHANGE_INTERVAL=nothing, STEP_SIZE_PT=nothing, R_CUT=nothing)
-    
+    Emax = 1e3
     println("\nUniform Sampling: Generating random configuration...")
     
     # Sample a random configuration from training data
@@ -418,17 +419,34 @@ function query_US(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
     
     println("Sampled configuration $random_idx from training data")
     
-    # Randomize positions uniformly in the simulation box
-    randomize_positions!(selected_system)
+    # Randomize positions until energy is below Emax
+    max_attempts = 10000
+    attempt = 0
+    ref_energy = Inf * u"eV"
     
-    println("Randomized positions uniformly in simulation box")
+    while ustrip(u"eV", ref_energy) > Emax && attempt < max_attempts
+        attempt += 1
+        
+        # Randomize positions uniformly in the simulation box
+        randomize_positions!(selected_system)
+        
+        # Compute energy with reference model
+        ref_energy = potential_energy(selected_system, ref_model)
+        
+        # if attempt % 100 == 0
+        #     println("  Attempt $attempt: Energy = $(ustrip(u\"eV\", ref_energy)) eV")
+        # end
+    end
     
-    # Compute energy and forces with reference model
-    println("Computing energy and forces with reference potential...")
-    ref_energy = potential_energy(selected_system, ref_model)
+    if attempt >= max_attempts
+        @warn "Could not find configuration with energy below Emax=$Emax eV after $max_attempts attempts. Using last configuration."
+    end
+    
+    # Compute forces with reference model
+    println("Computing forces with reference potential...")
     ref_forces = forces(selected_system, ref_model)
     
-    add_energy_forces(selected_system, ref_energy, ref_forces)
+    selected_system = add_energy_forces(selected_system, ref_energy, ref_forces)
     
     println("Selected random configuration with energy: $ref_energy")
     
@@ -471,7 +489,7 @@ function query_TrainData(raw_data_train, model, ref_model, Σ, α, Psqrt, my_wei
     println("Randomly selected configuration $random_idx from file")
     
 
-    
+    selected_system = add_energy_forces(selected_system, potential_energy(selected_system, ref_model), forces(selected_system, ref_model))
     return convert_forces_to_svector(selected_system)
 end
 
@@ -526,7 +544,7 @@ function query_HAL(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
     samples, acceptance_rate, traj, system_max, std_max = run_HAL_sampler(
         sampler, initial_system, model, T_MIN, Σ, Psqrt;
         τ=TAU, σ_stop=SIGMA_STOP,
-        n_samples=N_SAMPLES_PT, burnin=BURNIN_PT, thin=THIN_PT,
+        n_samples=N_SAMPLES_PT, burnin=0, thin=THIN_PT,
         collect_forces=false
     )
     println("HAL sampling complete!")
@@ -603,7 +621,7 @@ function query_HAL(raw_data_train, model, ref_model, Σ, α, Psqrt, my_weights;
     ref_energy = potential_energy(system_max, ref_model)
     ref_forces = forces(system_max, ref_model)
     
-    add_energy_forces(system_max, ref_energy, ref_forces)
+    system_max = add_energy_forces(system_max, ref_energy, ref_forces)
     
     println("Selected HAL configuration with energy: $ref_energy")
     

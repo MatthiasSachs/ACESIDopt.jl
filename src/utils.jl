@@ -259,29 +259,33 @@ samples_enriched = add_energy_forces(rwmc_samples, model)
 ```
 """
 function add_energy_forces(samples, model)
-    samples_enriched = []
+    # samples_enriched = []
     
-    for sample in samples
-        # Calculate energy and forces for this sample
-        E = ustrip(u"eV", potential_energy(sample, model))
-        f = forces(sample, model)
+    # for sample in samples
+    #     # Calculate energy and forces for this sample
+    #     E = ustrip(u"eV", potential_energy(sample, model))
+    #     f = forces(sample, model)
         
-        # Convert forces to the right format (Vector of Vector{Float64})
-        forces_data = [ustrip.(u"eV/Å", f_atom) for f_atom in f]
+    #     # Convert forces to the right format (Vector of Vector{Float64})
+    #     forces_data = [ustrip.(u"eV/Å", f_atom) for f_atom in f]
         
-        # Create new atom_data with forces
-        updated_atom_data = merge(deepcopy(sample.atom_data), (forces=forces_data,))
+    #     # Create new atom_data with forces
+    #     updated_atom_data = merge(deepcopy(sample.atom_data), (forces=forces_data,))
         
-        # Create new system_data with energy
-        updated_system_data = merge(deepcopy(sample.system_data), (energy=E,))
+    #     # Create new system_data with energy
+    #     updated_system_data = merge(deepcopy(sample.system_data), (energy=E,))
         
-        # Create new Atoms structure with updated atom_data and system_data
-        sample_enriched = Atoms(updated_atom_data, updated_system_data)
+    #     # Create new Atoms structure with updated atom_data and system_data
+    #     sample_enriched = Atoms(updated_atom_data, updated_system_data)
         
-        push!(samples_enriched, sample_enriched)
-    end
+    #     push!(samples_enriched, sample_enriched)
+    # end
     
-    return samples_enriched
+    # return samples_enriched
+    return [ ( f = forces(sample, model);
+               E = potential_energy(sample, model); 
+               add_energy_forces(sample, E, f))
+           for sample in samples ]
 end
 
 """
@@ -311,10 +315,10 @@ sample_enriched = add_energy_forces(sample, E, f)
 """
 function add_energy_forces(sample::Atoms, energy, forces)
     # Create new atom_data with forces
-    updated_atom_data = merge(deepcopy(sample.atom_data), (forces=forces,))
+    updated_atom_data = merge(deepcopy(sample.atom_data), (forces=ustrip.(forces),))
     
     # Create new system_data with energy
-    updated_system_data = merge(deepcopy(sample.system_data), (energy=energy,))
+    updated_system_data = merge(deepcopy(sample.system_data), (energy=ustrip(u"eV", energy),))
     
     # Create new Atoms structure with updated atom_data and system_data
     sample_enriched = Atoms(updated_atom_data, updated_system_data)
