@@ -33,7 +33,7 @@ const TEST_DATA_PATH = "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experimen
 #"/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"
 const LARGE_TEST_DATA_PATH = TEST_DATA_PATH
 const TEST_THINNING = 10  # Thinning factor for test data
-const LARGE_TEST_DATA_THINNING = 10  # Thinning factor for large test data
+const LARGE_TEST_DATA_THINNING = 1  # Thinning factor for large test data
 const INIT_CONFIGS_PATH = TEST_DATA_PATH # "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"  # Path to initial training candidates
 
 # Reference model specification
@@ -41,7 +41,7 @@ const REF_MODEL = "../models/Si_ref_model-small-2.json"
 #"SW" # "../models/Si_ref_model.json" # "SW"  # Use "SW" for Stillinger-Weber or provide path to ACE model file (e.g., "../models/Si_ref_model.json")
 
 # Initial training set
-const N_INITIAL_TRAIN = 2  # Number of initial training samples
+const N_INITIAL_TRAIN = 1  # Number of initial training samples
 const INITIAL_TRAIN_RAND = true  # If true, randomly select initial training samples; if false, use first N_INITIAL_TRAIN
 const RANDOM_INIT = true  # If true, sample raw_data["init"] using query_US; if false, use configurations from INIT_CONFIGS_PATH
 
@@ -101,7 +101,7 @@ using LaTeXStrings, MultivariateStats, Plots, PrettyTables, Printf,
 
 using ACEpotentials, AtomsBase
 using ACESIDopt
-using ACESIDopt: MFitmodel, save_simulation_parameters, load_simulation_parameters
+using ACESIDopt: MFitmodel, save_simulation_parameters, load_simulation_parameters, comp_potE_MAE_RMSE
 using ACEpotentials: _make_prior
 using ACEpotentials
 using ACEpotentials: make_atoms_data, assess_dataset, 
@@ -164,12 +164,15 @@ data_dir = joinpath(experiment_dir, "data")
 models_dir = joinpath(experiment_dir, "models")
 other_data_dir = joinpath(experiment_dir, "other-data")
 pt_diagnostics_dir = joinpath(plots_dir, "pt_diagnostics")
+test_predictions_dir = joinpath(plots_dir, "test_predictions")
+train_predictions_dir = joinpath(plots_dir, "train_predictions")
+train_new_samples_dir = joinpath(plots_dir, "train_new_samples")
 
 if !isdir(experiment_dir)
     mkpath(experiment_dir)
     println("Created experiment directory: $experiment_dir")
 end
-for dir in [plots_dir, data_dir, models_dir, other_data_dir, pt_diagnostics_dir]
+for dir in [plots_dir, data_dir, models_dir, other_data_dir, pt_diagnostics_dir, test_predictions_dir, train_predictions_dir, train_new_samples_dir]
     if !isdir(dir)
         mkpath(dir)
     end
@@ -453,16 +456,16 @@ for t in 1:N_ACTIVE_ITERATIONS
     push!(test_error, comp_potE_error(raw_data["test"], model))
 
     p_energy = plot_energy_comparison(raw_data["test"], model,
-                               joinpath(plots_dir, "energy_scatter_iter_$(lpad(t, 3, '0')).png"))
+                               joinpath(test_predictions_dir, "energy_scatter_iter_$(lpad(t, 3, '0')).png"))
     
     p_forces = plot_forces_comparison(raw_data["test"], model, 
-                                   joinpath(plots_dir, "forces_scatter_iter_$(lpad(t, 3, '0')).png"))
+                                   joinpath(test_predictions_dir, "forces_scatter_iter_$(lpad(t, 3, '0')).png"))
 
     p_energy_train = plot_energy_comparison(raw_data_train, model,
-                               joinpath(plots_dir, "train_energy_scatter_iter_$(lpad(t, 3, '0')).png"))
+                               joinpath(train_predictions_dir, "train_energy_scatter_iter_$(lpad(t, 3, '0')).png"))
     
     p_forces_train = plot_forces_comparison(raw_data_train, model, 
-                                   joinpath(plots_dir, "train_forces_scatter_iter_$(lpad(t, 3, '0')).png"))
+                                   joinpath(train_predictions_dir, "train_forces_scatter_iter_$(lpad(t, 3, '0')).png"))
 
     #%% Query next candidate using selected query function
     println("\nUsing query function: $QUERY_FUNCTION")
@@ -527,10 +530,10 @@ for t in 1:N_ACTIVE_ITERATIONS
         println("Training set size: $(length(raw_data_train))")
         
         p_energy_train = plot_energy_comparison(raw_data_train, model,
-                                   joinpath(plots_dir, "train_energy_scatter_before_fit_iter_$(lpad(t, 3, '0')).png");marked=[length(raw_data_train)])
+                                   joinpath(train_new_samples_dir, "train_energy_scatter_before_fit_iter_$(lpad(t, 3, '0')).png");marked=[length(raw_data_train)])
         
         p_forces_train = plot_forces_comparison(raw_data_train, model, 
-                                       joinpath(plots_dir, "train_forces_scatter_before_fit_iter_$(lpad(t, 3, '0')).png");marked=[length(raw_data_train)])
+                                       joinpath(train_new_samples_dir, "train_forces_scatter_before_fit_iter_$(lpad(t, 3, '0')).png");marked=[length(raw_data_train)])
     else
         global n_rejected += 1
         println("Configuration REJECTED (E = $selected_energy eV > E_MAX_ACC = $E_MAX_ACC eV)")
@@ -540,59 +543,132 @@ for t in 1:N_ACTIVE_ITERATIONS
 end
 
 #%%
-# Plot and save test error evolution
-iterations = 1:length(test_error)
-p_error = plot(iterations, test_error, 
-    xlabel="Active Learning Iteration",
-    ylabel="Test RMSE (eV)",
-    title="Test Error Evolution During Active Learning (Using ACEfit.BLR)",
-    label="Test Error", 
-    marker=:circle, 
-    linewidth=2,
-    markersize=5,
-    legend=:topright)
-
-# Save the error evolution plot
-error_plot_filename = joinpath(experiment_dir, "test_error_evolution.png")
-savefig(p_error, error_plot_filename)
-println("Saved error evolution plot: $error_plot_filename")
-
-#%%
 # Load large test set
 raw_data_large_all = ExtXYZ.load(LARGE_TEST_DATA_PATH)
 raw_data["test-large"] = convert_forces_to_svector.(raw_data_large_all[1:LARGE_TEST_DATA_THINNING:end])
 
-large_test_error = Float64[]
+# Compute comprehensive errors for all iterations
+println("\n" * "="^70)
+println("Computing errors for all iterations...")
+println("="^70)
+
+test_E_rmse = Float64[]
+test_E_mae = Float64[]
+test_F_rmse = Float64[]
+test_F_mae = Float64[]
+
+large_test_E_rmse = Float64[]
+large_test_E_mae = Float64[]
+large_test_F_rmse = Float64[]
+large_test_F_mae = Float64[]
+
+train_E_rmse = Float64[]
+train_E_mae = Float64[]
+train_F_rmse = Float64[]
+train_F_mae = Float64[]
+
 for i in 1:length(test_error)
     model_filename = joinpath(models_dir, "model_iter_$(lpad(i, 3, '0')).ace")
     tmodel = ACEpotentials.load_model(model_filename)[1]
-    push!(large_test_error, comp_potE_error(raw_data["test-large"], tmodel))
-    @printf("Large test set error for model iter %d: %.4f eV\n", i, large_test_error[end])
+    
+    # Test set errors
+    println("\nIteration $i - Test set:")
+    E_rmse, E_mae, F_rmse, F_mae = comp_potE_MAE_RMSE(raw_data["test"], tmodel)
+    push!(test_E_rmse, E_rmse)
+    push!(test_E_mae, E_mae)
+    push!(test_F_rmse, F_rmse)
+    push!(test_F_mae, F_mae)
+    
+    # Large test set errors
+    println("Iteration $i - Large test set:")
+    E_rmse, E_mae, F_rmse, F_mae = comp_potE_MAE_RMSE(raw_data["test-large"], tmodel)
+    push!(large_test_E_rmse, E_rmse)
+    push!(large_test_E_mae, E_mae)
+    push!(large_test_F_rmse, F_rmse)
+    push!(large_test_F_mae, F_mae)
+    
+    # Training set errors
+    println("Iteration $i - Training set:")
+    E_rmse, E_mae, F_rmse, F_mae = comp_potE_MAE_RMSE(raw_data_train, tmodel)
+    push!(train_E_rmse, E_rmse)
+    push!(train_E_mae, E_mae)
+    push!(train_F_rmse, F_rmse)
+    push!(train_F_mae, F_mae)
 end
 
-# Plot combined error evolution
+# Save all errors to YAML file
+errors_data = Dict(
+    "test" => Dict(
+        "energy_rmse" => test_E_rmse,
+        "energy_mae" => test_E_mae,
+        "forces_rmse" => test_F_rmse,
+        "forces_mae" => test_F_mae
+    ),
+    "large_test" => Dict(
+        "energy_rmse" => large_test_E_rmse,
+        "energy_mae" => large_test_E_mae,
+        "forces_rmse" => large_test_F_rmse,
+        "forces_mae" => large_test_F_mae
+    ),
+    "train" => Dict(
+        "energy_rmse" => train_E_rmse,
+        "energy_mae" => train_E_mae,
+        "forces_rmse" => train_F_rmse,
+        "forces_mae" => train_F_mae
+    ),
+    "iterations" => collect(1:length(test_error)),
+    "metadata" => Dict(
+        "n_iterations" => length(test_error),
+        "final_train_size" => length(raw_data_train),
+        "n_rejected" => n_rejected,
+        "n_initial_train" => N_INITIAL_TRAIN
+    )
+)
+
+errors_file = joinpath(experiment_dir, "errors.yaml")
+save_simulation_parameters(errors_file, errors_data)
+println("\nSaved all errors to: $errors_file")
+
+# Plot test and train errors
 iterations = 1:length(test_error)
-p_error = plot(iterations, test_error, 
+
+# Plot 1: Test and Train Energy RMSE
+p_test_train = plot(iterations, test_E_rmse,
     xlabel="Active Learning Iteration",
-    ylabel="Test RMSE (eV)",
-    title="Test Error Evolution During Active Learning (Using ACEfit.BLR)",
-    label="Test Error (small)", 
-    marker=:circle, 
+    ylabel="Energy RMSE (eV)",
+    title="Test and Train Error Evolution",
+    label="Test RMSE",
+    marker=:circle,
     linewidth=2,
     markersize=5,
-    legend=:topright, yscale=:log10)
+    yscale=:log10,
+    legend=:topright)
 
-# Add large test set error
-plot!(p_error, iterations, large_test_error,
-    label="Test Error (large)",
+plot!(p_test_train, iterations, train_E_rmse,
+    label="Train RMSE",
+    marker=:square,
+    linewidth=2,
+    markersize=5)
+
+test_train_plot_filename = joinpath(experiment_dir, "test_train_error_evolution.png")
+savefig(p_test_train, test_train_plot_filename)
+println("Saved test/train error plot: $test_train_plot_filename")
+
+# Plot 2: Large Test Error
+p_large_test = plot(iterations, large_test_E_rmse,
+    xlabel="Active Learning Iteration",
+    ylabel="Energy RMSE (eV)",
+    title="Large Test Set Error Evolution",
+    label="Large Test RMSE",
     marker=:diamond,
     linewidth=2,
-    markersize=4)
+    markersize=5,
+    yscale=:log10,
+    legend=:topright)
 
-# Save the combined error evolution plot
-error_plot_filename = joinpath(experiment_dir, "test_error_evolution_all.png")
-savefig(p_error, error_plot_filename)
-println("Saved combined error evolution plot: $error_plot_filename")
+large_test_plot_filename = joinpath(experiment_dir, "large_test_error_evolution.png")
+savefig(p_large_test, large_test_plot_filename)
+println("Saved large test error plot: $large_test_plot_filename")
 
 println("\n" * "="^70)
 println("Active Learning with Distributed Parallel Tempering Complete!")

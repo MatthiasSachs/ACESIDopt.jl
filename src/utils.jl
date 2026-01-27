@@ -1,5 +1,5 @@
 using AtomsBase
-using AtomsBase: FlexibleSystem, FastSystem
+using AtomsBase: FlexibleSystem, FastSystem, AbstractSystem
 using AtomsCalculators: potential_energy, forces
 using ACEfit: count_observations, AbstractData
 using LinearAlgebra
@@ -18,6 +18,25 @@ end
 function comp_potE_error(dataset, model)
     return sum( (potential_energy(at, model).val - at.system_data.energy)^2 for at in dataset ) / length(dataset)
 end
+
+function comp_potE_MAE_RMSE(dataset, model)
+    E_vec = [ustrip(potential_energy(at, model)) for at in dataset]
+    F_vec = [ustrip.(forces(at, model)) for at in dataset]
+    E_rmse = sqrt(sum( ( E- at.system_data.energy)^2 for (E,at) in zip(E_vec, dataset)) / length(dataset))
+    E_mae = sum( abs.( E- at.system_data.energy) for (E,at) in zip(E_vec, dataset)) / length(dataset)
+    
+    # Count total number of force components (3 per atom across all configurations)
+    total_force_components = sum(3 * length(at) for at in dataset)
+    
+    F_rmse = sqrt(sum( sum( (F[i] .- at.atom_data.forces[i]).^2 ) for (F,at) in zip(F_vec, dataset) for i in 1:length(at)) / total_force_components)
+    F_mae = sum( sum( abs.(F[i] .- at.atom_data.forces[i]) ) for (F,at) in zip(F_vec, dataset) for i in 1:length(at)) / total_force_components
+    
+    println("Energy RMSE: $E_rmse eV, MAE: $E_mae eV")
+    println("Forces RMSE: $F_rmse eV/Å, MAE: $F_mae eV/Å")
+    return E_rmse, E_mae, F_rmse, F_mae
+end
+
+
 
 """
     cholesky_with_jitter(Σ; jitter_fraction=1e-6, max_jitter_fraction=1e-3, jitter_factor=10.0)
