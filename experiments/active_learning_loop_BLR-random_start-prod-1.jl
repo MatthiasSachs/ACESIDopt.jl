@@ -4,25 +4,35 @@ Training from generated samples with PT sampling
 Using ACEfit.BLR instead of sklearn BayesianRidge
 =#
 
+# Run the experiment 10 times with different random seeds
+for method in ["ABSID", "TSSID", "HAL", "US"]  # Can add other methods like "US", "HAL" later
+for run_number in 1:10
+    println("\n" * "="^80)
+    println("STARTING RUN $run_number / 10")
+    println("="^80 * "\n")
+    
+    # Clean up previous run's global variables if needed
+    GC.gc()
+
 #=============================================================================
 SIMULATION PARAMETERS - Set all parameters here
 =============================================================================#
 
 # Random seeds
-const RANDOM_SEED = 2234
+RANDOM_SEED = 2234 + run_number - 1
 
 # Parallel computing
-const N_WORKERS = 4
+N_WORKERS = 4
 
 # Experiment identification
-const EXPERIMENT_NAME = "AL_US_BLR_20it-ACE-320K6-K1200-random-start-constraint-2"
+EXPERIMENT_NAME = "$(method)_run$(run_number)"
 
 # "AL_ABSID_BLR_10it-SW"
 #"AL_US-SW-5-demo"
-const OUTPUT_DIR = joinpath(@__DIR__, "results")
+OUTPUT_DIR = joinpath(@__DIR__, "production_results-1")
 
 # Data paths
-const TEST_DATA_PATH = "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_dia-primitive-2-high-K1200/data/replica_1_samples.xyz"
+TEST_DATA_PATH = "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_dia-primitive-2-high-K1200/data/replica_1_samples.xyz"
 #"/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/examples/../data/Si-diamond-primitive-8atoms.xyz"
 #"/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_dia-primitive-2-temp/data/replica_1_samples.xyz"
 # "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_dia-primitive-2-temp/data/replica_1_samples.xyz"
@@ -31,66 +41,66 @@ const TEST_DATA_PATH = "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experimen
 #"/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"
 # "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-very-large-high-temp/data/replica_1_samples.xyz"
 #"/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"
-const LARGE_TEST_DATA_PATH = TEST_DATA_PATH
-const TEST_THINNING = 10  # Thinning factor for test data
-const LARGE_TEST_DATA_THINNING = 1  # Thinning factor for large test data
-const INIT_CONFIGS_PATH = TEST_DATA_PATH # "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"  # Path to initial training candidates
+LARGE_TEST_DATA_PATH = TEST_DATA_PATH
+TEST_THINNING = 10  # Thinning factor for test data
+LARGE_TEST_DATA_THINNING = 1  # Thinning factor for large test data
+INIT_CONFIGS_PATH = TEST_DATA_PATH # "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"  # Path to initial training candidates
 
 # Reference model specification
-const REF_MODEL = "../models/Si_ref_model-small-2.json"
+REF_MODEL = "../models/Si_ref_model-small-2.json"
 #"SW" # "../models/Si_ref_model.json" # "SW"  # Use "SW" for Stillinger-Weber or provide path to ACE model file (e.g., "../models/Si_ref_model.json")
 
 # Initial training set
-const N_INITIAL_TRAIN = 1  # Number of initial training samples
-const INITIAL_TRAIN_RAND = true  # If true, randomly select initial training samples; if false, use first N_INITIAL_TRAIN
-const RANDOM_INIT = true  # If true, sample raw_data["init"] using query_US; if false, use configurations from INIT_CONFIGS_PATH
+N_INITIAL_TRAIN = 1  # Number of initial training samples
+INITIAL_TRAIN_RAND = true  # If true, randomly select initial training samples; if false, use first N_INITIAL_TRAIN
+RANDOM_INIT = true  # If true, sample raw_data["init"] using query_US; if false, use configurations from INIT_CONFIGS_PATH
 
 # Active learning parameters
-const N_ACTIVE_ITERATIONS = 20  # Number of active learning iterations
-const E_MAX_ACC = -320.6  # Maximum energy (eV) threshold for accepting queried configurations
+N_ACTIVE_ITERATIONS = 30  # Number of active learning iterations
+E_MAX_ACC = -320.6  # Maximum energy (eV) threshold for accepting queried configurations
 
 # Query function selection
 # Options: "TSSID", "ABSID", "US", "TrainData", "HAL"
-const QUERY_FUNCTION = "US"
+QUERY_FUNCTION = method
 
 # Query function specific parameters
 # For query_TrainData (callable by selecting QUERY_FUNCTION = "TrainData"):
-const TRAIN_DATA_NAME = "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_DW_dia-primitive-2-temp-2/data/replica_1_samples.xyz"
+TRAIN_DATA_NAME = "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_DW_dia-primitive-2-temp-2/data/replica_1_samples.xyz"
 # "/Users/msachs2/Documents/GitHub-2/ACESIDopt.jl/experiments/results/ptd_ACE_silicon_dia-primitive-2-large/data/replica_1_samples.xyz"
 
 # For query_HAL:
-const TAU = 1.0  # Temperature annealing parameter for HAL
-const SIGMA_STOP = 0.1  # Stopping criterion for HAL
+TAU = 1.0  # Temperature annealing parameter for HAL
+SIGMA_STOP = 0.1  # Stopping criterion for HAL
 
 # ACE model parameters
-const ACE_ELEMENTS = [:Si]
-const ACE_RCUT = 5.5  # Å
-const ACE_ORDER = 3  # body-order - 1
-const ACE_TOTALDEGREE = 6
-const ACE_PRIOR_ORDER = 4
+ACE_ELEMENTS = [:Si]
+ACE_RCUT = 5.5  # Å
+ACE_ORDER = 3  # body-order - 1
+ACE_TOTALDEGREE = 6
+ACE_PRIOR_ORDER = 4
 
 # Training weights
-const WEIGHT_ENERGY = 30.0
-const WEIGHT_FORCES = 1.0
-const WEIGHT_VIRIAL = 1.0
+WEIGHT_ENERGY = 30.0
+WEIGHT_FORCES = 1.0
+WEIGHT_VIRIAL = 1.0
 
 # ACEfit.BLR parameters
-const COMMITTEE_SIZE = 1000
-const FACTORIZATION = :svd
+COMMITTEE_SIZE = 1000
+FACTORIZATION = :svd
 
 # Distributed parallel tempering parameters
-const N_REPLICAS = 4
-const T_MIN = 1200.0  # K
-const T_MAX = 1600.0  # K
-const N_SAMPLES_PT = 100 #1000
-const BURNIN_PT = 10000
-const THIN_PT = 20 #100
-const EXCHANGE_INTERVAL = 50
-const STEP_SIZE_PT = 0.02  # Å
-const R_CUT = 7.5  # Å (for RDF/ADF analysis)
+N_REPLICAS = 4
+T_MIN = 1200.0  # K
+T_MAX = 1600.0  # K
+N_SAMPLES_PT = 100 #1000
+BURNIN_PT = 10000
+THIN_PT = 20 #100
+EXCHANGE_INTERVAL = 50
+STEP_SIZE_PT = 0.02  # Å
+R_CUT = 7.5  # Å (for RDF/ADF analysis)
 
 # Cholesky jitter parameters
-const MAX_JITTER_FRACTION = 1e-3
+MAX_JITTER_FRACTION = 1e-3
 
 #=============================================================================
 END OF PARAMETERS
@@ -548,7 +558,7 @@ for t in 1:N_ACTIVE_ITERATIONS
         p_forces_train = plot_forces_comparison(raw_data_train, model, 
                                        joinpath(train_new_samples_dir, "train_forces_scatter_before_fit_iter_$(lpad(t, 3, '0')).png");marked=[length(raw_data_train)])
     else
-        global n_rejected += 1
+        n_rejected += 1
         println("Configuration REJECTED (E = $selected_energy eV > E_MAX_ACC = $E_MAX_ACC eV)")
         println("Total rejected queries: $n_rejected")
         println("Training set size remains: $(length(raw_data_train))")
@@ -721,6 +731,17 @@ println("\nTiming Statistics:")
 println("  Main loop time: $(round(main_loop_time, digits=2)) seconds ($(round(main_loop_time/60, digits=2)) minutes)")
 println("  Error evaluation time: $(round(error_eval_time, digits=2)) seconds ($(round(error_eval_time/60, digits=2)) minutes)")
 println("  Total time: $(round(total_time, digits=2)) seconds ($(round(total_time/60, digits=2)) minutes)")
+
+    println("\n" * "="^80)
+    println("COMPLETED RUN $run_number / 10")
+    println("="^80 * "\n")
+    
+end  # End of run loop
+end  # End of method loop
+
+println("\n" * "="^80)
+println("ALL 10 RUNS COMPLETED")
+println("="^80)
 println("="^70)
 
 # Optional: Remove workers if desired

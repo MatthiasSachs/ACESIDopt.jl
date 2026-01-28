@@ -7,6 +7,15 @@ using Unitful: ustrip, @u_str
 using ExtXYZ: Atoms
 using StaticArrays: SVector
 export predictive_variance
+export EnergyConstraint
+
+struct EnergyConstraint
+    model
+    e_max_acc
+end 
+
+(constraint::EnergyConstraint)(at::AbstractSystem) = 
+    ustrip(potential_energy(at, constraint.model)) < constraint.e_max_acc
 
 function mflexiblesystem(sys)
    c3ll = cell(sys)
@@ -440,4 +449,116 @@ function load_simulation_parameters(filepath::String)
     params = YAML.load_file(filepath)
     println("Loaded simulation parameters from: $filepath")
     return params
+end
+
+# ============================================================================
+# ExpVarFunctor and related utilities for gradient-based optimization
+# ============================================================================
+
+using ACEfit: count_observations, AbstractData, basis_size, feature_matrix, target_vector
+using ACEpotentials: make_atoms_data
+
+export ExpVarFunctor, massemble, mset_positions!, mget_positions
+
+"""
+    mset_positions!(at, x::Vector{T}) where {T<:Real}
+
+Set atomic positions from a flat vector x of length 3*n_atoms.
+Positions are in Angstroms and stored with units.
+"""
+function mset_positions!(at, x::Vector{T}) where {T<:Real}
+    n_atoms = length(at)
+    @assert length(x) == 3 * n_atoms "Length of position vector does not match number of atoms."
+    for i in 1:n_atoms
+        at.atom_data.position[i] = (SVector{3,T}(x[3*(i-1)+1], x[3*(i-1)+2], x[3*(i-1)+3])) * u"Å"
+    end
+    return at
+end
+
+"""
+    mget_positions(at::AbstractSystem)
+
+Extract atomic positions as a flat vector of length 3*n_atoms (in Angstroms).
+"""
+function mget_positions(at::AbstractSystem)
+    n_atoms = length(at)
+    x = Vector{Float64}(undef, 3 * n_atoms)
+    for i in 1:n_atoms
+        pos = at.atom_data.position[i] / u"Å"
+        x[3*(i-1)+1] = pos[1]
+        x[3*(i-1)+2] = pos[2]
+        x[3*(i-1)+3] = pos[3]
+    end
+    return x
+end
+
+"""
+    massemble(data::AbstractVector{<:AbstractData}, basis)
+
+Manually assemble feature matrix from multiple data elements.
+More efficient than calling ACEfit.assemble when only the feature matrix is needed.
+"""
+function massemble(data::AbstractVector{<:AbstractData}, basis)
+    rows = Array{UnitRange}(undef, length(data))  # row ranges for each element of data
+    rows[1] = 1:count_observations(data[1])
+    for i in 2:length(data)
+        rows[i] = rows[i - 1][end] .+ (1:count_observations(data[i]))
+    end
+    A = zeros(rows[end][end], basis_size(basis))
+    # Loop through each data element and fill the corresponding rows
+    for (i, d) in enumerate(data)
+        A[rows[i], :] .= feature_matrix(d, basis)
+    end
+    return Array(A)
+end
+
+"""
+    ExpVarFunctor
+
+Functor for computing expected variance reduction as a function of atomic positions.
+Useful for gradient-based optimization of atomic configurations to maximize information gain.
+
+# Fields
+- `Σ::Matrix`: Posterior covariance matrix from Bayesian linear regression
+- `A::Matrix`: Weighted feature matrix of candidate points (Awp_tgibbs)
+- `α::Float64`: Noise precision parameter
+- `at`: Atomic system template
+- `model`: ACE potential model
+
+# Usage
+```julia
+g = ExpVarFunctor(Σ, Awp_tgibbs, α, at, model)
+x = rand(3*length(at))  # Random positions
+value = g(x)            # Compute expected variance reduction
+```
+"""
+struct ExpVarFunctor
+    Σ::Matrix
+    A::Matrix
+    α::Float64
+    at
+    model
+end
+
+"""
+    (f::ExpVarFunctor)(x::Vector{T}) where {T<:Real}
+
+Evaluate the expected variance reduction for atomic positions x.
+"""
+function (f::ExpVarFunctor)(x::Vector{T}) where {T<:Real}
+    # Update atomic positions
+    mset_positions!(f.at, x)
+    
+    # Create AtomsData with energy and forces
+    at_data = make_atoms_data([f.at], f.model; 
+                              energy_key = "energy", 
+                              force_key = "forces", 
+                              virial_key = nothing,
+                              weights = Dict("default"=>Dict("E"=>30.0, "F"=>1.0, "V"=>1.0)))
+    
+    # Assemble feature matrix
+    a = massemble(at_data, f.model)
+    
+    # Compute expected variance reduction
+    return expected_red_variance(f.Σ, f.A, a, f.α) 
 end
